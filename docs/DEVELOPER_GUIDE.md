@@ -431,6 +431,12 @@ routers/loop_markers.py::create_loop_marker(video_id, marker)
   ├── db.commit()
   └── return LoopMarkerResponse
 
+routers/loop_markers.py::update_loop_marker(video_id, loop_id, update)
+  ├── db.execute("SELECT id FROM loop_markers WHERE id=? AND video_id=?")
+  ├── db.execute("UPDATE loop_markers SET label=? WHERE id=?")
+  ├── db.commit()
+  └── return LoopMarkerResponse
+
 Frontend VideoPlayer.tsx:
   ├── useEffect → apiClient.getLoopMarkers(videoId)      # Load on mount
   ├── handleSetA() → markA = videoRef.currentTime
@@ -438,6 +444,7 @@ Frontend VideoPlayer.tsx:
   ├── useEffect [activeLoop] → video.addEventListener('timeupdate', ...)
   │     └── if (currentTime >= end) video.currentTime = start
   ├── handleSaveLoop() → apiClient.createLoopMarker(videoId, {label, start, end})
+  ├── handleSaveRename(m) → apiClient.updateLoopMarker(videoId, m.id, {label})
   └── handleDeleteLoop() → apiClient.deleteLoopMarker(videoId, loopId)
 ```
 
@@ -627,6 +634,7 @@ docker exec -w /app magpie-backend python -m pytest tests/ --cov=app --cov-repor
 | `test_api_videos.py` | 14 | Video CRUD endpoints |
 | `test_api_tags.py` | 7 | Tag CRUD endpoints |
 | `test_api_categories.py` | 7 | Category CRUD endpoints |
+| `test_api_loop_markers.py` | 14 | Loop marker CRUD, rename, cascade delete, validation |
 
 ### Fixtures (conftest.py)
 
@@ -754,6 +762,7 @@ class TestEndpoint:
 **Endpoints:**
 - `GET /api/videos/{video_id}/loops` — List all saved loops for a video, ordered by `start_secs`
 - `POST /api/videos/{video_id}/loops` — Create a loop marker (validates video exists, `start < end`)
+- `PUT /api/videos/{video_id}/loops/{loop_id}` — Rename a loop marker (validates ownership by `video_id`)
 - `DELETE /api/videos/{video_id}/loops/{loop_id}` — Delete a loop marker (validates ownership by `video_id`)
 
 **Database table:** `loop_markers`
@@ -766,9 +775,15 @@ class TestEndpoint:
 | `end_secs` | REAL | Loop end time in seconds |
 | `created_at` | TEXT | ISO timestamp |
 
+**Models:**
+- `LoopMarkerCreate` — `label`, `start_secs`, `end_secs` (all required)
+- `LoopMarkerUpdate` — `label` only (for rename)
+- `LoopMarkerResponse` — full record including `id`, `video_id`, `created_at`
+
 **Gotchas:**
-- Cascade delete ensures loops are cleaned up when a video is deleted
-- Times are stored as floats to support sub-second precision from the HTML5 `<video>` element
+- Cascade delete ensures loops are cleaned up when a video is deleted — requires `PRAGMA foreign_keys = ON` (set per-connection in `database.py`)
+- Times are stored as floats (REAL) to support sub-second precision from the HTML5 `<video>` element
+- All endpoints validate `video_id` ownership — you can't modify a loop marker by passing a different video's ID
 
 ### 9.8 Frontend `VideoPlayer.tsx` — Loop Playback
 
@@ -795,13 +810,15 @@ useEffect(() => {
 1. Click **Set A** → captures `videoRef.current.currentTime`
 2. Click **Set B** → captures end time, starts looping immediately (unsaved preview)
 3. Type a label and click **Save** → `POST /api/videos/{id}/loops`
-4. Saved loops appear in a list — click to activate, trash icon to delete
-5. Click **Stop Loop** to resume normal playback
+4. Saved loops appear in a list — click play to activate, pencil to rename, trash to delete
+5. Click pencil icon → inline text input replaces label, Enter to confirm, Escape to cancel → `PUT /api/videos/{id}/loops/{loop_id}`
+6. Click **Stop Loop** to resume normal playback
 
 **State management:**
 - `markA` / `markB` — transient A-B points before saving
 - `activeLoop` — the currently looping `LoopMarker` (or `null`)
-- `loopMarkers` — all saved loops, fetched on mount
+- `loopMarkers` — all saved loops, fetched on mount via `GET /api/videos/{id}/loops`
+- `editingId` / `editLabel` — tracks which loop is being renamed inline
 - Two separate `useEffect` hooks: one for saved active loops, one for unsaved A-B preview
 
 **Visual indicators:** Colored bars overlaid near the video progress bar showing loop regions (blue for saved, yellow for unsaved preview, green for active).
@@ -918,6 +935,9 @@ Backend uses **structlog** with JSON output. Key log events:
 | `thumbnail_generated` | thumbnail.py | Thumbnail created by ffmpeg |
 | `webhook_download_started` | webhook.py | Chatbot triggered a download |
 | `notification_sent` | notifier.py | Webhook callback delivered |
+| `loop_marker_created` | loop_markers.py | New loop marker saved |
+| `loop_marker_renamed` | loop_markers.py | Loop marker label updated |
+| `loop_marker_deleted` | loop_markers.py | Loop marker removed |
 
 ### Viewing Logs
 
@@ -1017,6 +1037,7 @@ curl -X POST http://localhost:8000/api/videos/regenerate-thumbnails
 | **FTS rowid mapping** | FTS5 standalone table rowids must match `videos` table rowids — any bulk deletion without FTS cleanup can cause mismatches |
 | **Thumbnail path prefix** | The `/api/` prefix is added in the Pydantic model validator — if the DB value already has it, it won't double-prefix, but any code writing to `thumbnail_path` must use the relative form |
 | **SSE connection lifetime** | Long-running SSE generators hold database connections — with many concurrent downloads this could exhaust connections |
+| **Foreign keys pragma** | `PRAGMA foreign_keys = ON` must be set per-connection (not per-database) — `get_db_dep()` and `init_db()` both set it, but any code opening its own connection (e.g. background tasks) must also set it for cascade deletes to work |
 
 ---
 

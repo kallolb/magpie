@@ -229,6 +229,14 @@ curl -X POST http://localhost:8000/api/videos/{video_id}/loops \
   }'
 ```
 
+#### Rename a Loop Marker
+```bash
+curl -X PUT http://localhost:8000/api/videos/{video_id}/loops/{loop_id} \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{"label": "Guitar Solo"}'
+```
+
 #### Delete a Loop Marker
 ```bash
 curl -X DELETE http://localhost:8000/api/videos/{video_id}/loops/{loop_id} \

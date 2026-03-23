@@ -77,6 +77,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.nas.yml up 
 - API routes all prefixed with `/api/`
 - API auth via `X-API-Key` header
 - Database uses async access throughout via `aiosqlite`
+- `PRAGMA foreign_keys = ON` is set per-connection — any new DB connection must set it for cascade deletes to work
 - FTS index (`videos_fts`) must be kept in sync when inserting/updating videos
 - Frontend uses `@/` path alias (maps to `src/`)
 - Frontend uses Tailwind CSS for styling (no CSS modules)

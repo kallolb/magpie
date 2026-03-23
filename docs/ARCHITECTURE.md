@@ -201,6 +201,7 @@ backend/
 ### Loop Markers API
 - `GET /api/videos/{id}/loops` - List saved loops
 - `POST /api/videos/{id}/loops` - Create a loop marker
+- `PUT /api/videos/{id}/loops/{loop_id}` - Rename a loop marker
 - `DELETE /api/videos/{id}/loops/{loop_id}` - Delete a loop marker
 
 ### Webhook API
