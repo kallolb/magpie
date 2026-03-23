@@ -73,3 +73,12 @@ export interface AppSettings {
   storage_path: string
   max_concurrent_downloads: number
 }
+
+export interface LoopMarker {
+  id: number
+  video_id: string
+  label: string
+  start_secs: number
+  end_secs: number
+  created_at: string
+}

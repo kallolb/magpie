@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import categories, downloads, settings, tags, videos, webhook
+from app.routers import categories, downloads, loop_markers, settings, tags, videos, webhook
 
 logger = structlog.get_logger()
 
@@ -107,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(categories.router)
     app.include_router(webhook.router)
     app.include_router(settings.router)
+    app.include_router(loop_markers.router)
 
     # Mount static files for thumbnails
     storage_root = get_settings().STORAGE_ROOT

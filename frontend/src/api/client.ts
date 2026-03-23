@@ -8,6 +8,7 @@ import {
   Category,
   StorageStats,
   AppSettings,
+  LoopMarker,
 } from '@/types'
 
 const api: AxiosInstance = axios.create({
@@ -98,6 +99,16 @@ export const apiClient = {
   // Storage Stats
   getStorageStats: (): Promise<StorageStats> =>
     api.get('/storage/stats').then((res) => res.data),
+
+  // Loop Markers
+  getLoopMarkers: (videoId: string): Promise<LoopMarker[]> =>
+    api.get(`/videos/${videoId}/loops`).then((res) => res.data),
+
+  createLoopMarker: (videoId: string, data: { label: string; start_secs: number; end_secs: number }): Promise<LoopMarker> =>
+    api.post(`/videos/${videoId}/loops`, data).then((res) => res.data),
+
+  deleteLoopMarker: (videoId: string, loopId: number): Promise<void> =>
+    api.delete(`/videos/${videoId}/loops/${loopId}`).then(() => undefined),
 }
 
 export default api

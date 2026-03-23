@@ -94,6 +94,17 @@ async def init_db(db_path: str) -> None:
             CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
             CREATE INDEX IF NOT EXISTS idx_video_tags_tag_id ON video_tags(tag_id);
             CREATE INDEX IF NOT EXISTS idx_download_log_video_id ON download_log(video_id);
+
+            CREATE TABLE IF NOT EXISTS loop_markers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+                label TEXT NOT NULL,
+                start_secs REAL NOT NULL,
+                end_secs REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_loop_markers_video_id ON loop_markers(video_id);
         """
         )
 

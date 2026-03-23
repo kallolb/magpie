@@ -38,7 +38,8 @@ backend/
 │   ├── models/                # Pydantic request/response models
 │   │   ├── video.py
 │   │   ├── tag.py
-│   │   └── category.py
+│   │   ├── category.py
+│   │   └── loop_marker.py
 │   │
 │   ├── routers/               # API endpoint handlers
 │   │   ├── downloads.py       # Download management
@@ -46,7 +47,8 @@ backend/
 │   │   ├── tags.py            # Tag management
 │   │   ├── categories.py      # Category management
 │   │   ├── webhook.py         # Webhook integration
-│   │   └── settings.py        # Config & health endpoints
+│   │   ├── settings.py        # Config & health endpoints
+│   │   └── loop_markers.py    # A-B loop marker CRUD
 │   │
 │   ├── services/              # Business logic
 │   │   ├── downloader.py      # yt-dlp wrapper
@@ -160,6 +162,11 @@ backend/
 - FTS5 virtual table for full-text search
 - Indexes: title, description, uploader, tags
 
+### loop_markers table
+- Saved A-B loop regions per video (for music practice, study, etc.)
+- `video_id`, `label`, `start_secs`, `end_secs`
+- Cascade-deleted when the parent video is deleted
+
 ### download_log table
 - Audit trail of download attempts
 - `triggered_by`: API, webhook:source, callback:id
@@ -190,6 +197,11 @@ backend/
 - `GET /api/categories` - List with counts
 - `POST /api/categories` - Create
 - `DELETE /api/categories/{name}` - Delete
+
+### Loop Markers API
+- `GET /api/videos/{id}/loops` - List saved loops
+- `POST /api/videos/{id}/loops` - Create a loop marker
+- `DELETE /api/videos/{id}/loops/{loop_id}` - Delete a loop marker
 
 ### Webhook API
 - `POST /api/webhook/ingest` - Universal ingestion (bot integration)

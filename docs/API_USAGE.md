@@ -209,6 +209,32 @@ curl -X POST http://localhost:8000/api/webhook/ingest \
   }'
 ```
 
+### Loop Markers (A-B Repeat)
+
+#### List Loop Markers for a Video
+```bash
+curl http://localhost:8000/api/videos/{video_id}/loops \
+  -H "X-API-Key: changeme"
+```
+
+#### Create a Loop Marker
+```bash
+curl -X POST http://localhost:8000/api/videos/{video_id}/loops \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{
+    "label": "Chorus",
+    "start_secs": 45.5,
+    "end_secs": 78.2
+  }'
+```
+
+#### Delete a Loop Marker
+```bash
+curl -X DELETE http://localhost:8000/api/videos/{video_id}/loops/{loop_id} \
+  -H "X-API-Key: changeme"
+```
+
 ### Settings
 
 #### Get Settings
@@ -240,6 +266,7 @@ storage/
 - **video_tags**: Many-to-many relationship between videos and tags
 - **categories**: Available categories
 - **videos_fts**: Full-text search index (FTS5)
+- **loop_markers**: Saved A-B loop regions per video
 - **download_log**: History of download attempts
 
 ## Features

@@ -106,6 +106,10 @@ curl "http://localhost:8000/api/videos/search?q=python+tutorial" \
 curl http://localhost:8000/api/categories -H "X-API-Key: changeme"
 ```
 
+## Loop Markers (A-B Repeat)
+
+The video player supports loop markers for practicing music or studying video sections. Set A and B points during playback to loop a section, then save it with a label for later. Saved loops are persisted per video and accessible from the player UI.
+
 ## Moving to NAS Storage
 
 See [docs/NAS_MIGRATION.md](./docs/NAS_MIGRATION.md) for a step-by-step guide.
