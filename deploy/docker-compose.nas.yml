@@ -4,8 +4,6 @@
 # Before using, update the NFS server address and path below,
 # or set NAS_IP and NAS_PATH environment variables.
 
-version: "3.9"
-
 services:
   backend:
     volumes:
