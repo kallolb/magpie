@@ -12,7 +12,7 @@ cd magpie
 cp .env.example .env
 
 # 3. Start everything
-docker compose up -d
+docker compose -f deploy/docker-compose.yml up -d
 
 # 4. Open the frontend
 open http://localhost:3000
@@ -61,11 +61,9 @@ magpie/
 ├── backend/           # FastAPI + yt-dlp + SQLite
 ├── frontend/          # React + TypeScript + Vite
 ├── bots/              # Chat bot adapters (Telegram, Discord)
-├── docker-compose.yml # Local deployment
-├── docker-compose.nas.yml  # NAS storage overlay
-├── Caddyfile          # Production reverse proxy
-├── NAS_MIGRATION.md   # Guide for moving to NAS storage
-└── PLAN.md            # Full architecture plan
+├── deploy/            # Docker Compose, Caddyfile
+├── docs/              # Architecture, guides, API usage
+└── assets/            # Logo images
 ```
 
 ## Chat Bot Setup
@@ -110,4 +108,4 @@ curl http://localhost:8000/api/categories -H "X-API-Key: changeme"
 
 ## Moving to NAS Storage
 
-See [NAS_MIGRATION.md](./NAS_MIGRATION.md) for a step-by-step guide.
+See [docs/NAS_MIGRATION.md](./docs/NAS_MIGRATION.md) for a step-by-step guide.

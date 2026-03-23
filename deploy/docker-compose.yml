@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   backend:
-    build: ./backend
+    build: ../backend
     image: magpie-backend
     container_name: magpie-backend
     ports:
@@ -14,7 +14,7 @@ services:
       - DEFAULT_QUALITY=${DEFAULT_QUALITY:-1080}
       - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-3}
     volumes:
-      - ${STORAGE_PATH:-./storage}:/data
+      - ${STORAGE_PATH:-../storage}:/data
     depends_on:
       - redis
     restart: unless-stopped
@@ -25,7 +25,7 @@ services:
       retries: 3
 
   frontend:
-    build: ./frontend
+    build: ../frontend
     image: magpie-frontend
     container_name: magpie-frontend
     ports:

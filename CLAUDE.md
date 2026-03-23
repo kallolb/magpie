@@ -12,7 +12,7 @@ A self-hosted video downloader and organizer. Downloads videos from YouTube, Ins
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS, located in `frontend/`. Uses Zustand for state management, Axios for API calls, React Router for navigation, and Lucide for icons.
 - **Bots**: Telegram and Discord bot adapters in `bots/`, which POST to the backend webhook endpoint.
 - **Storage**: Videos stored in `storage/categories/<category>/`, thumbnails in `storage/thumbnails/`, SQLite DB in `storage/db/videos.db`.
-- **Deployment**: Docker Compose with three services (backend, frontend, redis). Caddy reverse proxy config included. NAS storage overlay via `docker-compose.nas.yml`.
+- **Deployment**: Docker Compose configs in `deploy/` with three services (backend, frontend, redis). Caddy reverse proxy config included. NAS storage overlay via `deploy/docker-compose.nas.yml`.
 
 ## Common Commands
 
@@ -45,9 +45,9 @@ npm run preview      # preview production build
 
 ### Docker
 ```bash
-docker compose up -d                 # start all services
-docker compose up -d --build         # rebuild and start
-docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d  # NAS mode
+docker compose -f deploy/docker-compose.yml up -d                 # start all services
+docker compose -f deploy/docker-compose.yml up -d --build         # rebuild and start
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.nas.yml up -d  # NAS mode
 ```
 
 ## Backend Structure
