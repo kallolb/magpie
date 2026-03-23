@@ -1,0 +1,28 @@
+# Caddyfile for production deployment with automatic HTTPS
+# Replace videos.yourdomain.com with your actual domain
+#
+# Usage: Add caddy service to docker-compose.yml:
+#   caddy:
+#     image: caddy:2-alpine
+#     ports: ["80:80", "443:443"]
+#     volumes:
+#       - ./Caddyfile:/etc/caddy/Caddyfile
+#       - caddy-data:/data
+#     restart: unless-stopped
+
+videos.yourdomain.com {
+    # Frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    # Backend API
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Webhook endpoint for chat bots
+    handle /api/webhook/* {
+        reverse_proxy backend:8000
+    }
+}

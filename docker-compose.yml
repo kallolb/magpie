@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    image: magpie-backend
+    container_name: magpie-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - STORAGE_ROOT=/data
+      - REDIS_URL=redis://redis:6379
+      - API_KEY=${API_KEY:-changeme}
+      - DEFAULT_QUALITY=${DEFAULT_QUALITY:-1080}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-3}
+    volumes:
+      - ${STORAGE_PATH:-./storage}:/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    image: magpie-frontend
+    container_name: magpie-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: magpie-redis
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  redis-data:

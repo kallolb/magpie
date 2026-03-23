@@ -1,0 +1,22 @@
+# Docker Compose override for NAS storage
+# Usage: docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d
+#
+# Before using, update the NFS server address and path below,
+# or set NAS_IP and NAS_PATH environment variables.
+
+version: "3.9"
+
+services:
+  backend:
+    volumes:
+      - nas-storage:/data
+
+  frontend: {}
+
+volumes:
+  nas-storage:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NAS_IP:-192.168.1.100},rw,nfsvers=4.1,soft,timeo=300
+      device: ":${NAS_PATH:-/volume1/videos}"
