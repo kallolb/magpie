@@ -1,3 +1,5 @@
+name: magpie
+
 services:
   backend:
     build: ../backend
