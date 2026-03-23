@@ -108,14 +108,16 @@ magpie/
 │   │   ├── models/                 # Pydantic request/response schemas
 │   │   │   ├── video.py            # VideoResponse, DownloadRequest, SearchRequest, etc.
 │   │   │   ├── tag.py              # TagCreate, TagResponse
-│   │   │   └── category.py         # CategoryCreate, CategoryResponse
+│   │   │   ├── category.py         # CategoryCreate, CategoryResponse
+│   │   │   └── loop_marker.py     # LoopMarkerCreate, LoopMarkerResponse
 │   │   ├── routers/                # FastAPI route handlers
 │   │   │   ├── videos.py           # /api/videos/* CRUD, search, streaming, thumbnails
 │   │   │   ├── downloads.py        # /api/downloads/* start, status, SSE, cancel
 │   │   │   ├── tags.py             # /api/tags/* CRUD
 │   │   │   ├── categories.py       # /api/categories/* CRUD
 │   │   │   ├── webhook.py          # /api/webhook/ingest (chatbot integration)
-│   │   │   └── settings.py         # /api/settings, /api/health
+│   │   │   ├── settings.py         # /api/settings, /api/health
+│   │   │   └── loop_markers.py    # /api/videos/{id}/loops CRUD
 │   │   ├── services/               # Business logic layer
 │   │   │   ├── downloader.py       # yt-dlp wrappers (extract_metadata, download_video)
 │   │   │   ├── search.py           # FTS5 search queries, FTS index rebuild
@@ -166,9 +168,11 @@ magpie/
 ├── docs/
 │   ├── DESIGN.md                   # Architecture & design document
 │   └── DEVELOPER_GUIDE.md          # This file
-├── docker-compose.yml              # Local development stack
-├── docker-compose.nas.yml          # NAS deployment variant
-├── Caddyfile                       # Production reverse proxy config
+├── deploy/
+│   ├── docker-compose.yml          # Local development stack
+│   ├── docker-compose.nas.yml      # NAS deployment variant
+│   └── Caddyfile                   # Production reverse proxy config
+├── assets/                         # Logo images
 └── README.md                       # Project overview
 ```
 
@@ -193,6 +197,7 @@ magpie/
 | **Category** | A classification for organizing videos into filesystem directories | `categories` table + filesystem dirs |
 | **Download** | An in-progress video download tracked as an asyncio task | `videos` table (status/progress columns) + in-memory task map |
 | **DownloadLog** | Audit trail of download attempts | `download_log` table |
+| **LoopMarker** | A saved A-B repeat region within a video (label, start/end times) | `loop_markers` table |
 
 ### Key Abstractions
 
@@ -393,7 +398,50 @@ services/thumbnail.py::generate_thumbnail(video_file, storage_root, video_id)
   └── return "thumbnails/{video_id}.jpg"
 ```
 
-### 5.6 Webhook Ingest
+### 5.6 Loop Marker (A-B Repeat)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (VideoPlayer)
+    participant F as FastAPI
+    participant DB as SQLite
+
+    Note over B: User clicks Set A at 1:23
+    Note over B: User clicks Set B at 2:45
+    Note over B: Section loops immediately (client-side)
+    B->>F: POST /api/videos/{id}/loops {label: "Chorus", start: 83, end: 165}
+    F->>DB: SELECT id FROM videos WHERE id=? (verify exists)
+    F->>DB: INSERT INTO loop_markers (video_id, label, start_secs, end_secs)
+    F-->>B: LoopMarkerResponse {id, label, start_secs, end_secs}
+
+    Note over B: Later: user opens same video
+    B->>F: GET /api/videos/{id}/loops
+    F->>DB: SELECT * FROM loop_markers WHERE video_id=? ORDER BY start_secs
+    F-->>B: [LoopMarkerResponse, ...]
+    Note over B: User clicks saved loop → seeks to start, loops via timeupdate
+```
+
+#### Function Call Chain — Loop Markers
+
+```
+routers/loop_markers.py::create_loop_marker(video_id, marker)
+  ├── db.execute("SELECT id FROM videos WHERE id=?")    # Verify video exists
+  ├── Validate start_secs < end_secs
+  ├── db.execute("INSERT INTO loop_markers ...")
+  ├── db.commit()
+  └── return LoopMarkerResponse
+
+Frontend VideoPlayer.tsx:
+  ├── useEffect → apiClient.getLoopMarkers(videoId)      # Load on mount
+  ├── handleSetA() → markA = videoRef.currentTime
+  ├── handleSetB() → markB = videoRef.currentTime, start looping
+  ├── useEffect [activeLoop] → video.addEventListener('timeupdate', ...)
+  │     └── if (currentTime >= end) video.currentTime = start
+  ├── handleSaveLoop() → apiClient.createLoopMarker(videoId, {label, start, end})
+  └── handleDeleteLoop() → apiClient.deleteLoopMarker(videoId, loopId)
+```
+
+### 5.7 Webhook Ingest
 
 #### Function Call Chain — Webhook
 
@@ -699,7 +747,66 @@ class TestEndpoint:
 - Terminal statuses: `completed`, `failed`, `duplicate`
 - The `close` event is sent after the final data event
 
-### 9.7 Frontend `store/index.ts` — Zustand Store
+### 9.7 `app/routers/loop_markers.py` — A-B Loop Markers
+
+**Purpose:** CRUD endpoints for saving loop regions on videos. Designed for music practice — users mark a start and end point to repeat a section.
+
+**Endpoints:**
+- `GET /api/videos/{video_id}/loops` — List all saved loops for a video, ordered by `start_secs`
+- `POST /api/videos/{video_id}/loops` — Create a loop marker (validates video exists, `start < end`)
+- `DELETE /api/videos/{video_id}/loops/{loop_id}` — Delete a loop marker (validates ownership by `video_id`)
+
+**Database table:** `loop_markers`
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER PK | Auto-increment |
+| `video_id` | TEXT FK | References `videos(id)` with CASCADE delete |
+| `label` | TEXT | User-provided name (e.g. "Chorus", "Bridge") |
+| `start_secs` | REAL | Loop start time in seconds |
+| `end_secs` | REAL | Loop end time in seconds |
+| `created_at` | TEXT | ISO timestamp |
+
+**Gotchas:**
+- Cascade delete ensures loops are cleaned up when a video is deleted
+- Times are stored as floats to support sub-second precision from the HTML5 `<video>` element
+
+### 9.8 Frontend `VideoPlayer.tsx` — Loop Playback
+
+**Purpose:** Enhanced video player with A-B repeat functionality.
+
+**Key mechanism:** The HTML5 `<video>` element fires `timeupdate` events ~4 times/second. An `useEffect` hook attaches a listener that checks if `currentTime >= end_secs` and seeks back to `start_secs`:
+
+```typescript
+// Core loop logic
+useEffect(() => {
+  const video = videoRef.current
+  if (!video || !activeLoop) return
+  const onTimeUpdate = () => {
+    if (video.currentTime >= activeLoop.end_secs) {
+      video.currentTime = activeLoop.start_secs
+    }
+  }
+  video.addEventListener('timeupdate', onTimeUpdate)
+  return () => video.removeEventListener('timeupdate', onTimeUpdate)
+}, [activeLoop])
+```
+
+**User flow:**
+1. Click **Set A** → captures `videoRef.current.currentTime`
+2. Click **Set B** → captures end time, starts looping immediately (unsaved preview)
+3. Type a label and click **Save** → `POST /api/videos/{id}/loops`
+4. Saved loops appear in a list — click to activate, trash icon to delete
+5. Click **Stop Loop** to resume normal playback
+
+**State management:**
+- `markA` / `markB` — transient A-B points before saving
+- `activeLoop` — the currently looping `LoopMarker` (or `null`)
+- `loopMarkers` — all saved loops, fetched on mount
+- Two separate `useEffect` hooks: one for saved active loops, one for unsaved A-B preview
+
+**Visual indicators:** Colored bars overlaid near the video progress bar showing loop regions (blue for saved, yellow for unsaved preview, green for active).
+
+### 9.10 Frontend `store/index.ts` — Zustand Store
 
 **Purpose:** Global state management for the React SPA.
 
@@ -708,7 +815,7 @@ class TestEndpoint:
 - `activeDownloads` is a `Map<string, DownloadStatus>` — entries are auto-removed 5s after completion
 - `searchQuery` state is shared between the Header search bar and the Search page
 
-### 9.8 Frontend `hooks/useDownload.ts` — Download Hook
+### 9.11 Frontend `hooks/useDownload.ts` — Download Hook
 
 **Important behavior:**
 - Opens an `EventSource` for SSE progress
@@ -716,7 +823,7 @@ class TestEndpoint:
 - On terminal status: closes EventSource, calls `fetchVideos()` to refresh the list, sets error for `failed`/`duplicate`
 - On SSE connection error: sets "Connection lost" error
 
-### 9.9 Frontend `components/tags/TagInput.tsx` — Tag Input
+### 9.12 Frontend `components/tags/TagInput.tsx` — Tag Input
 
 **Important behavior:**
 - Tags are committed on: space, comma, or Enter key
@@ -778,6 +885,7 @@ class TestEndpoint:
 | New API endpoint | `routers/*.py`, `models/*.py`, `api/client.ts`, test file |
 | New category rule | `services/categorizer.py`, `tests/test_categorizer.py` |
 | New platform support | `utils/url_parser.py`, `tests/test_url_parser.py`, `DownloadForm.tsx` (optional UI) |
+| Loop marker change | `database.py` (schema), `models/loop_marker.py`, `routers/loop_markers.py`, `VideoPlayer.tsx`, `api/client.ts`, `types/index.ts` |
 | Database schema change | `database.py`, affected routers, models, tests |
 
 ### PR Checklist
@@ -930,4 +1038,5 @@ curl -X POST http://localhost:8000/api/videos/regenerate-thumbnails
 | **triggered_by** | Audit field tracking download source: `"api"`, `"webhook:telegram"`, `"callback:cb123"` |
 | **flat extraction** | yt-dlp mode fetching playlist structure without downloading each entry's full metadata |
 | **safe_filename** | Function that sanitizes video titles for filesystem compatibility |
+| **loop marker** | A saved A-B repeat region on a video, defined by label + start/end seconds |
 | **NAS** | Network-Attached Storage — target deployment environment |
