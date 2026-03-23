@@ -107,6 +107,9 @@ export const apiClient = {
   createLoopMarker: (videoId: string, data: { label: string; start_secs: number; end_secs: number }): Promise<LoopMarker> =>
     api.post(`/videos/${videoId}/loops`, data).then((res) => res.data),
 
+  updateLoopMarker: (videoId: string, loopId: number, data: { label: string }): Promise<LoopMarker> =>
+    api.put(`/videos/${videoId}/loops/${loopId}`, data).then((res) => res.data),
+
   deleteLoopMarker: (videoId: string, loopId: number): Promise<void> =>
     api.delete(`/videos/${videoId}/loops/${loopId}`).then(() => undefined),
 }

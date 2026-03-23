@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Repeat, Flag, Square, Trash2, Play, Save } from 'lucide-react'
+import { Repeat, Flag, Square, Trash2, Play, Save, Pencil, Check, X } from 'lucide-react'
 import { apiClient } from '@/api/client'
 import { LoopMarker } from '@/types'
 
@@ -133,6 +133,34 @@ export default function VideoPlayer({
     setActiveLoop(null)
     setMarkA(null)
     setMarkB(null)
+  }
+
+  // Rename state
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+
+  const handleStartRename = (marker: LoopMarker) => {
+    setEditingId(marker.id)
+    setEditLabel(marker.label)
+  }
+
+  const handleCancelRename = () => {
+    setEditingId(null)
+    setEditLabel('')
+  }
+
+  const handleSaveRename = async (marker: LoopMarker) => {
+    if (!editLabel.trim() || editLabel.trim() === marker.label) {
+      handleCancelRename()
+      return
+    }
+    try {
+      const updated = await apiClient.updateLoopMarker(videoId, marker.id, { label: editLabel.trim() })
+      setLoopMarkers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
+      if (activeLoop?.id === updated.id) setActiveLoop(updated)
+      setEditingId(null)
+      setEditLabel('')
+    } catch {}
   }
 
   const handleDeleteLoop = async (marker: LoopMarker) => {
@@ -286,10 +314,10 @@ export default function VideoPlayer({
                         : 'bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
                       <button
                         onClick={() => handleActivateLoop(m)}
-                        className={`p-1 rounded transition-colors ${
+                        className={`p-1 rounded transition-colors flex-shrink-0 ${
                           activeLoop?.id === m.id
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400'
@@ -298,18 +326,61 @@ export default function VideoPlayer({
                       >
                         {activeLoop?.id === m.id ? <Repeat size={16} /> : <Play size={16} />}
                       </button>
-                      <span className="font-medium text-gray-900 dark:text-white">{m.label}</span>
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {formatTime(m.start_secs)} - {formatTime(m.end_secs)}
-                      </span>
+                      {editingId === m.id ? (
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveRename(m)
+                              if (e.key === 'Escape') handleCancelRename()
+                            }}
+                            autoFocus
+                            className="flex-1 min-w-0 px-2 py-0.5 text-sm rounded border border-indigo-300 dark:border-indigo-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            onClick={() => handleSaveRename(m)}
+                            className="p-1 text-green-600 dark:text-green-400 hover:text-green-700 rounded transition-colors"
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={handleCancelRename}
+                            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded transition-colors"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="font-medium text-gray-900 dark:text-white truncate">{m.label}</span>
+                          <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
+                            {formatTime(m.start_secs)} - {formatTime(m.end_secs)}
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <button
-                      onClick={() => handleDeleteLoop(m)}
-                      className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
-                      title="Delete loop"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {editingId !== m.id && (
+                      <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                        <button
+                          onClick={() => handleStartRename(m)}
+                          className="p-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors"
+                          title="Rename loop"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLoop(m)}
+                          className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+                          title="Delete loop"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

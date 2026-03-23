@@ -11,6 +11,12 @@ class LoopMarkerCreate(BaseModel):
     end_secs: float = Field(..., ge=0, description="End time in seconds")
 
 
+class LoopMarkerUpdate(BaseModel):
+    """Request model for updating a loop marker."""
+
+    label: str = Field(..., min_length=1, description="New label for the loop")
+
+
 class LoopMarkerResponse(BaseModel):
     """Response model for a loop marker."""
 

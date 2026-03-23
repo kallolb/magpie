@@ -32,6 +32,7 @@ async def init_db(db_path: str) -> None:
         # Enable WAL mode for better concurrency
         await db.execute("PRAGMA journal_mode = WAL")
         await db.execute("PRAGMA synchronous = NORMAL")
+        await db.execute("PRAGMA foreign_keys = ON")
 
         # Create tables
         await db.executescript(
@@ -127,7 +128,7 @@ async def init_db(db_path: str) -> None:
 async def get_db(db_path: str) -> AsyncGenerator[aiosqlite.Connection, None]:
     """FastAPI dependency for database connections."""
     async with aiosqlite.connect(db_path) as db:
-        # Enable row factory for dict-like access
+        await db.execute("PRAGMA foreign_keys = ON")
         db.row_factory = aiosqlite.Row
         yield db
 
@@ -137,6 +138,7 @@ async def get_db_dep() -> AsyncGenerator[aiosqlite.Connection, None]:
     from app.config import get_settings
     settings = get_settings()
     async with aiosqlite.connect(settings.DATABASE_PATH) as db:
+        await db.execute("PRAGMA foreign_keys = ON")
         db.row_factory = aiosqlite.Row
         yield db
 
