@@ -106,6 +106,38 @@ async def init_db(db_path: str) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_loop_markers_video_id ON loop_markers(video_id);
+
+            CREATE TABLE IF NOT EXISTS compilations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                category TEXT NOT NULL DEFAULT 'compilations',
+                status TEXT NOT NULL DEFAULT 'draft',
+                render_mode TEXT,
+                output_path TEXT,
+                output_size_bytes INTEGER,
+                duration_secs REAL,
+                thumbnail_path TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS compilation_clips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                compilation_id TEXT NOT NULL REFERENCES compilations(id) ON DELETE CASCADE,
+                source_video_id TEXT NOT NULL REFERENCES videos(id),
+                position INTEGER NOT NULL,
+                start_secs REAL NOT NULL,
+                end_secs REAL NOT NULL,
+                label TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_compilation_clips_compilation_id ON compilation_clips(compilation_id);
+            CREATE INDEX IF NOT EXISTS idx_compilation_clips_source_video ON compilation_clips(source_video_id);
+            CREATE INDEX IF NOT EXISTS idx_compilations_status ON compilations(status);
+            CREATE INDEX IF NOT EXISTS idx_compilations_category ON compilations(category);
         """
         )
 

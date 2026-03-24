@@ -74,6 +74,39 @@ export interface AppSettings {
   max_concurrent_downloads: number
 }
 
+export interface CompilationClip {
+  id: number
+  compilation_id: string
+  source_video_id: string
+  source_video_title?: string
+  source_video_thumbnail?: string
+  position: number
+  start_secs: number
+  end_secs: number
+  duration_secs: number
+  label?: string
+  created_at: string
+}
+
+export interface Compilation {
+  id: string
+  title: string
+  description?: string
+  category: string
+  status: string
+  render_mode?: string
+  output_path?: string
+  output_size_bytes?: number
+  duration_secs?: number
+  thumbnail_path?: string
+  error_message?: string
+  clip_count: number
+  estimated_duration_secs: number
+  created_at: string
+  updated_at: string
+  clips: CompilationClip[]
+}
+
 export interface LoopMarker {
   id: number
   video_id: string

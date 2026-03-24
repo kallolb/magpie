@@ -9,6 +9,8 @@ import {
   StorageStats,
   AppSettings,
   LoopMarker,
+  Compilation,
+  CompilationClip,
 } from '@/types'
 
 const api: AxiosInstance = axios.create({
@@ -116,6 +118,37 @@ export const apiClient = {
 
   deleteLoopMarker: (videoId: string, loopId: number): Promise<void> =>
     api.delete(`/videos/${videoId}/loops/${loopId}`).then(() => undefined),
+
+  // Compilations
+  getCompilations: (params?: { status?: string; category?: string }): Promise<Compilation[]> =>
+    api.get('/compilations', { params }).then((res) => res.data),
+
+  getCompilation: (id: string): Promise<Compilation> =>
+    api.get(`/compilations/${id}`).then((res) => res.data),
+
+  createCompilation: (data: { title: string; description?: string; category?: string }): Promise<Compilation> =>
+    api.post('/compilations', data).then((res) => res.data),
+
+  updateCompilation: (id: string, data: { title?: string; description?: string; category?: string }): Promise<Compilation> =>
+    api.put(`/compilations/${id}`, data).then((res) => res.data),
+
+  deleteCompilation: (id: string): Promise<void> =>
+    api.delete(`/compilations/${id}`).then(() => undefined),
+
+  addClip: (compilationId: string, data: { source_video_id: string; start_secs: number; end_secs: number; label?: string }): Promise<CompilationClip> =>
+    api.post(`/compilations/${compilationId}/clips`, data).then((res) => res.data),
+
+  updateClip: (compilationId: string, clipId: number, data: { start_secs?: number; end_secs?: number; label?: string }): Promise<CompilationClip> =>
+    api.put(`/compilations/${compilationId}/clips/${clipId}`, data).then((res) => res.data),
+
+  deleteClip: (compilationId: string, clipId: number): Promise<void> =>
+    api.delete(`/compilations/${compilationId}/clips/${clipId}`).then(() => undefined),
+
+  reorderClips: (compilationId: string, clipIds: number[]): Promise<CompilationClip[]> =>
+    api.put(`/compilations/${compilationId}/clips/reorder`, { clip_ids: clipIds }).then((res) => res.data),
+
+  importLoopAsClip: (compilationId: string, loopId: number): Promise<CompilationClip> =>
+    api.post(`/compilations/${compilationId}/clips/from-loop/${loopId}`).then((res) => res.data),
 }
 
 export default api
