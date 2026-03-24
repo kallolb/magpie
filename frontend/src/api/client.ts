@@ -56,6 +56,9 @@ export const apiClient = {
   deleteVideo: (id: string): Promise<void> =>
     api.delete(`/videos/${id}`).then(() => undefined),
 
+  checkVideoDeletion: (id: string): Promise<any> =>
+    api.get(`/videos/${id}/deletion-check`).then((res) => res.data),
+
   // Search
   searchVideos: (
     query: string,
@@ -120,8 +123,11 @@ export const apiClient = {
     api.delete(`/videos/${videoId}/loops/${loopId}`).then(() => undefined),
 
   // Compilations
-  getCompilations: (params?: { status?: string; category?: string }): Promise<Compilation[]> =>
+  getCompilations: (params?: { status?: string; category?: string; q?: string }): Promise<Compilation[]> =>
     api.get('/compilations', { params }).then((res) => res.data),
+
+  searchCompilations: (query: string): Promise<Compilation[]> =>
+    api.get('/compilations', { params: { q: query } }).then((res) => res.data),
 
   getCompilation: (id: string): Promise<Compilation> =>
     api.get(`/compilations/${id}`).then((res) => res.data),

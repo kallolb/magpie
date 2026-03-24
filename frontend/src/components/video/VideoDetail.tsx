@@ -33,6 +33,8 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
   const tagInputRef = useRef<TagInputHandle>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deletionCheck, setDeletionCheck] = useState<any>(null)
+  const [checkingDeletion, setCheckingDeletion] = useState(false)
 
   useEffect(() => {
     fetchCategories()
@@ -344,17 +346,41 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
             {/* Delete Button */}
             {!showDeleteConfirm && (
               <button
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={async () => {
+                  setCheckingDeletion(true)
+                  try {
+                    const check = await apiClient.checkVideoDeletion(video.id)
+                    setDeletionCheck(check)
+                  } catch {}
+                  setCheckingDeletion(false)
+                  setShowDeleteConfirm(true)
+                }}
+                disabled={checkingDeletion}
                 className="flex items-center gap-2 px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
               >
                 <Trash2 size={18} />
-                Delete Video
+                {checkingDeletion ? 'Checking...' : 'Delete Video'}
               </button>
             )}
 
             {/* Delete Confirmation */}
             {showDeleteConfirm && (
               <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                {deletionCheck?.referenced && (
+                  <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <p className="text-amber-800 dark:text-amber-300 text-sm font-medium mb-1">
+                      This video is used in {deletionCheck.compilation_count} compilation{deletionCheck.compilation_count !== 1 ? 's' : ''}:
+                    </p>
+                    <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc list-inside">
+                      {deletionCheck.compilations.map((c: any) => (
+                        <li key={c.id}>{c.title}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                      Deleting will make those clips unrenderable.
+                    </p>
+                  </div>
+                )}
                 <p className="text-red-900 dark:text-red-300 font-medium mb-3">
                   Are you sure you want to delete this video? This action cannot be undone.
                 </p>
@@ -367,7 +393,7 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
                     {deleting ? 'Deleting...' : 'Delete'}
                   </button>
                   <button
-                    onClick={() => setShowDeleteConfirm(false)}
+                    onClick={() => { setShowDeleteConfirm(false); setDeletionCheck(null) }}
                     className="px-4 py-2 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-300 rounded-lg font-medium hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                   >
                     Cancel

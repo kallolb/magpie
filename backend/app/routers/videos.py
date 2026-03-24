@@ -266,6 +266,28 @@ async def update_video(
         )
 
 
+@router.get("/{video_id}/deletion-check")
+async def check_deletion(
+    video_id: str,
+    db: aiosqlite.Connection = Depends(get_db_dep),
+) -> dict:
+    """Check if a video is referenced by compilations before deletion."""
+    db.row_factory = aiosqlite.Row
+    cursor = await db.execute(
+        """SELECT DISTINCT c.id, c.title FROM compilation_clips cc
+           JOIN compilations c ON cc.compilation_id = c.id
+           WHERE cc.source_video_id = ?""",
+        (video_id,),
+    )
+    rows = await cursor.fetchall()
+    compilations = [{"id": r["id"], "title": r["title"]} for r in rows]
+    return {
+        "referenced": len(compilations) > 0,
+        "compilation_count": len(compilations),
+        "compilations": compilations,
+    }
+
+
 @router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_video(
     video_id: str,

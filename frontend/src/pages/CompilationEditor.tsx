@@ -1,9 +1,17 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronUp, ChevronDown,
+  ArrowLeft, Plus, Trash2, Pencil, Check, X, GripVertical,
   Film, Clock, Search, Flag, Save, Play, AlertCircle, Loader2, Scan,
 } from 'lucide-react'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { apiClient } from '@/api/client'
 import { Compilation, CompilationClip, Video, LoopMarker } from '@/types'
 
@@ -11,6 +19,87 @@ function formatTime(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.floor(secs % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function SortableClip({
+  clip, isActive, isEditing, labelDraft, onPreview, onStartRename, onSaveRename,
+  onCancelRename, onLabelChange, onDelete,
+}: {
+  clip: CompilationClip
+  isActive: boolean
+  isEditing: boolean
+  labelDraft: string
+  onPreview: () => void
+  onStartRename: () => void
+  onSaveRename: () => void
+  onCancelRename: () => void
+  onLabelChange: (v: string) => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: clip.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`bg-white dark:bg-gray-800 rounded-lg border p-3 transition-colors ${
+        isActive
+          ? 'border-indigo-400 dark:border-indigo-600'
+          : 'border-gray-200 dark:border-gray-700'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div {...attributes} {...listeners} className="pt-2 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600">
+          <GripVertical size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 w-5">{clip.position}.</span>
+            {isEditing ? (
+              <div className="flex items-center gap-1 flex-1">
+                <input
+                  type="text"
+                  value={labelDraft}
+                  onChange={(e) => onLabelChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onSaveRename(); if (e.key === 'Escape') onCancelRename() }}
+                  autoFocus
+                  className="flex-1 px-2 py-0.5 text-sm rounded border border-indigo-300 dark:border-indigo-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                />
+                <button onClick={onSaveRename} className="p-0.5 text-green-600"><Check size={14} /></button>
+                <button onClick={onCancelRename} className="p-0.5 text-gray-400"><X size={14} /></button>
+              </div>
+            ) : (
+              <span className="font-medium text-gray-900 dark:text-white text-sm truncate">
+                {clip.label || 'Untitled clip'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            {clip.source_video_title || 'Unknown video'}
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {formatTime(clip.start_secs)} → {formatTime(clip.end_secs)} ({formatTime(clip.duration_secs)})
+          </p>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={onPreview} className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Preview">
+            <Play size={14} />
+          </button>
+          <button onClick={onStartRename} className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Rename">
+            <Pencil size={14} />
+          </button>
+          <button onClick={onDelete} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors" title="Remove">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function CompilationEditor() {
@@ -108,21 +197,30 @@ export default function CompilationEditor() {
     } catch {}
   }
 
-  const handleMoveClip = async (clipId: number, direction: 'up' | 'down') => {
-    if (!compilation) return
-    const clips = [...compilation.clips]
-    const idx = clips.findIndex((c) => c.id === clipId)
-    if (idx < 0) return
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= clips.length) return
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  )
 
-    const newOrder = clips.map((c) => c.id)
-    ;[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]]
+  const handleDragEnd = async (event: DragEndEvent) => {
+    if (!compilation) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = compilation.clips.findIndex((c) => c.id === active.id)
+    const newIndex = compilation.clips.findIndex((c) => c.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+
+    const reordered = arrayMove(compilation.clips, oldIndex, newIndex)
+    // Optimistic update
+    setCompilation({ ...compilation, clips: reordered })
 
     try {
-      await apiClient.reorderClips(compilation.id, newOrder)
+      await apiClient.reorderClips(compilation.id, reordered.map((c) => c.id))
       fetchCompilation()
-    } catch {}
+    } catch {
+      fetchCompilation() // revert on error
+    }
   }
 
   const handleDeleteClip = async (clipId: number) => {
@@ -332,85 +430,58 @@ export default function CompilationEditor() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Left: Clip list */}
         <div className="lg:col-span-3 space-y-3">
+          {/* Timeline visualization */}
+          {compilation.clips.length > 0 && compilation.estimated_duration_secs > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Timeline</p>
+              <div className="flex h-6 rounded overflow-hidden gap-0.5">
+                {compilation.clips.map((clip, i) => {
+                  const pct = (clip.duration_secs / compilation.estimated_duration_secs) * 100
+                  const colors = ['bg-indigo-500', 'bg-cyan-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500', 'bg-teal-500']
+                  return (
+                    <div
+                      key={clip.id}
+                      className={`${colors[i % colors.length]} relative group cursor-pointer transition-opacity ${
+                        previewClip?.id === clip.id ? 'opacity-100 ring-2 ring-white' : 'opacity-70 hover:opacity-100'
+                      }`}
+                      style={{ width: `${Math.max(pct, 2)}%` }}
+                      onClick={() => handlePreviewClip(clip)}
+                      title={`${clip.label || 'Clip ' + (i + 1)} (${formatTime(clip.duration_secs)})`}
+                    >
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-1">
+                        {pct > 8 ? (clip.label || `${i + 1}`) : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {compilation.clips.length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
               <p className="text-gray-500 dark:text-gray-400">No clips yet. Add clips from your video library.</p>
             </div>
           ) : (
-            compilation.clips.map((clip, idx) => (
-              <div
-                key={clip.id}
-                className={`bg-white dark:bg-gray-800 rounded-lg border p-3 transition-colors ${
-                  previewClip?.id === clip.id
-                    ? 'border-indigo-400 dark:border-indigo-600'
-                    : 'border-gray-200 dark:border-gray-700'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Reorder buttons */}
-                  <div className="flex flex-col gap-0.5 pt-1">
-                    <button
-                      onClick={() => handleMoveClip(clip.id, 'up')}
-                      disabled={idx === 0}
-                      className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <ChevronUp size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleMoveClip(clip.id, 'down')}
-                      disabled={idx === compilation.clips.length - 1}
-                      className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <ChevronDown size={14} />
-                    </button>
-                  </div>
-
-                  {/* Clip info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 w-5">{clip.position}.</span>
-                      {editingClipId === clip.id ? (
-                        <div className="flex items-center gap-1 flex-1">
-                          <input
-                            type="text"
-                            value={clipLabelDraft}
-                            onChange={(e) => setClipLabelDraft(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleRenameClip(clip); if (e.key === 'Escape') setEditingClipId(null) }}
-                            autoFocus
-                            className="flex-1 px-2 py-0.5 text-sm rounded border border-indigo-300 dark:border-indigo-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
-                          />
-                          <button onClick={() => handleRenameClip(clip)} className="p-0.5 text-green-600"><Check size={14} /></button>
-                          <button onClick={() => setEditingClipId(null)} className="p-0.5 text-gray-400"><X size={14} /></button>
-                        </div>
-                      ) : (
-                        <span className="font-medium text-gray-900 dark:text-white text-sm truncate">
-                          {clip.label || 'Untitled clip'}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {clip.source_video_title || 'Unknown video'}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      {formatTime(clip.start_secs)} → {formatTime(clip.end_secs)} ({formatTime(clip.duration_secs)})
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => handlePreviewClip(clip)} className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Preview">
-                      <Play size={14} />
-                    </button>
-                    <button onClick={() => { setEditingClipId(clip.id); setClipLabelDraft(clip.label || '') }} className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors" title="Rename">
-                      <Pencil size={14} />
-                    </button>
-                    <button onClick={() => handleDeleteClip(clip.id)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors" title="Remove">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={compilation.clips.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                {compilation.clips.map((clip) => (
+                  <SortableClip
+                    key={clip.id}
+                    clip={clip}
+                    isActive={previewClip?.id === clip.id}
+                    isEditing={editingClipId === clip.id}
+                    labelDraft={clipLabelDraft}
+                    onPreview={() => handlePreviewClip(clip)}
+                    onStartRename={() => { setEditingClipId(clip.id); setClipLabelDraft(clip.label || '') }}
+                    onSaveRename={() => handleRenameClip(clip)}
+                    onCancelRename={() => setEditingClipId(null)}
+                    onLabelChange={setClipLabelDraft}
+                    onDelete={() => handleDeleteClip(clip.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           )}
 
           {/* Add clip buttons */}

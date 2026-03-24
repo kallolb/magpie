@@ -142,10 +142,19 @@ export default function Compilations() {
               key={comp.id}
               className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                {comp.thumbnail_path ? (
+                  <div className="w-20 h-14 bg-gray-200 dark:bg-gray-700 rounded flex-shrink-0 overflow-hidden">
+                    <img src={comp.thumbnail_path.startsWith('/') ? comp.thumbnail_path : `/api/${comp.thumbnail_path}`} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-20 h-14 bg-gray-100 dark:bg-gray-700 rounded flex-shrink-0 flex items-center justify-center">
+                    <Film size={20} className="text-gray-400" />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <Film size={18} className="text-indigo-500 flex-shrink-0" />
+                    <Film size={14} className="text-indigo-500 flex-shrink-0" />
                     <h3 className="font-semibold text-gray-900 dark:text-white truncate">{comp.title}</h3>
                     <StatusBadge status={comp.status} />
                   </div>

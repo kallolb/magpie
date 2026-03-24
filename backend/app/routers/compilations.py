@@ -95,6 +95,7 @@ async def create_compilation(
 async def list_compilations(
     status_filter: Optional[str] = None,
     category: Optional[str] = None,
+    q: Optional[str] = None,
     db: aiosqlite.Connection = Depends(get_db_dep),
 ) -> list[CompilationResponse]:
     db.row_factory = aiosqlite.Row
@@ -106,6 +107,10 @@ async def list_compilations(
     if category:
         sql += " AND category = ?"
         params.append(category)
+    if q:
+        sql += " AND (title LIKE ? OR description LIKE ?)"
+        like = f"%{q}%"
+        params.extend([like, like])
     sql += " ORDER BY updated_at DESC"
 
     cursor = await db.execute(sql, params)
