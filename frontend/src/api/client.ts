@@ -149,6 +149,15 @@ export const apiClient = {
 
   importLoopAsClip: (compilationId: string, loopId: number): Promise<CompilationClip> =>
     api.post(`/compilations/${compilationId}/clips/from-loop/${loopId}`).then((res) => res.data),
+
+  analyzeCompilation: (compilationId: string): Promise<any> =>
+    api.post(`/compilations/${compilationId}/analyze`).then((res) => res.data),
+
+  renderCompilation: (compilationId: string, mode: string): Promise<any> =>
+    api.post(`/compilations/${compilationId}/render`, { mode }).then((res) => res.data),
+
+  getCompilationStreamUrl: (compilationId: string): string =>
+    `/api/compilations/${compilationId}/stream`,
 }
 
 export default api

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronUp, ChevronDown,
-  Film, Clock, Search, Flag, Save, Play, AlertCircle,
+  Film, Clock, Search, Flag, Save, Play, AlertCircle, Loader2, Scan,
 } from 'lucide-react'
 import { apiClient } from '@/api/client'
 import { Compilation, CompilationClip, Video, LoopMarker } from '@/types'
@@ -50,6 +50,13 @@ export default function CompilationEditor() {
   const [previewClip, setPreviewClip] = useState<CompilationClip | null>(null)
   const previewVideoRef = useRef<HTMLVideoElement>(null)
 
+  // Analyze & Render
+  const [analysis, setAnalysis] = useState<any>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [renderMode, setRenderMode] = useState<string | null>(null)
+  const [rendering, setRendering] = useState(false)
+  const [renderError, setRenderError] = useState<string | null>(null)
+
   const fetchCompilation = () => {
     if (!id) return
     apiClient.getCompilation(id)
@@ -72,6 +79,23 @@ export default function CompilationEditor() {
     video.addEventListener('timeupdate', onTimeUpdate)
     return () => video.removeEventListener('timeupdate', onTimeUpdate)
   }, [previewClip])
+
+  // Poll render status
+  useEffect(() => {
+    if (!compilation || compilation.status !== 'rendering') return
+    setRendering(true)
+    const interval = setInterval(async () => {
+      try {
+        const updated = await apiClient.getCompilation(compilation.id)
+        setCompilation(updated)
+        if (updated.status === 'completed' || updated.status === 'failed') {
+          setRendering(false)
+          if (updated.status === 'failed') setRenderError(updated.error_message || 'Render failed')
+        }
+      } catch {}
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [compilation?.status])
 
   // --- Handlers ---
 
@@ -164,6 +188,40 @@ export default function CompilationEditor() {
       fetchCompilation()
     } catch {} finally {
       setAddingClip(false)
+    }
+  }
+
+  // --- Analyze & Render ---
+
+  const handleAnalyze = async () => {
+    if (!compilation) return
+    setAnalyzing(true)
+    setAnalysis(null)
+    setRenderError(null)
+    try {
+      const result = await apiClient.analyzeCompilation(compilation.id)
+      setAnalysis(result)
+      // Pre-select recommended mode
+      const rec = result.options?.find((o: any) => o.recommended)
+      setRenderMode(rec?.mode || 'reencode')
+    } catch (err: any) {
+      setRenderError(err.response?.data?.detail || 'Analysis failed')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const handleRender = async () => {
+    if (!compilation || !renderMode) return
+    setRendering(true)
+    setRenderError(null)
+    try {
+      await apiClient.renderCompilation(compilation.id, renderMode)
+      // Status polling will pick up progress
+      fetchCompilation()
+    } catch (err: any) {
+      setRenderError(err.response?.data?.detail || 'Failed to start render')
+      setRendering(false)
     }
   }
 
@@ -370,6 +428,142 @@ export default function CompilationEditor() {
               <Flag size={16} /> From Loop Markers
             </button>
           </div>
+
+          {/* Render Section */}
+          {compilation.clips.length > 0 && (
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+              {/* Completed: show player */}
+              {compilation.status === 'completed' && compilation.output_path && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-green-200 dark:border-green-800 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-sm font-semibold text-green-700 dark:text-green-400">Rendered successfully</span>
+                    {compilation.duration_secs && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">({formatTime(compilation.duration_secs)})</span>
+                    )}
+                  </div>
+                  <div className="bg-black rounded-lg overflow-hidden">
+                    <video className="w-full h-auto" controls>
+                      <source src={apiClient.getCompilationStreamUrl(compilation.id)} type="video/mp4" />
+                    </video>
+                  </div>
+                  <button
+                    onClick={() => { setAnalysis(null); handleAnalyze() }}
+                    className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    Re-render with different settings
+                  </button>
+                </div>
+              )}
+
+              {/* Rendering: show progress */}
+              {compilation.status === 'rendering' && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Loader2 size={16} className="text-blue-500 animate-spin" />
+                    <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">Rendering...</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div className="bg-blue-500 h-2 rounded-full animate-pulse" style={{ width: '60%' }} />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">This may take a few minutes for re-encoded compilations</p>
+                </div>
+              )}
+
+              {/* Failed: show error */}
+              {compilation.status === 'failed' && compilation.error_message && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
+                  <AlertCircle size={18} className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-red-700 dark:text-red-400">Render failed</p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{compilation.error_message}</p>
+                  </div>
+                </div>
+              )}
+
+              {renderError && compilation.status !== 'failed' && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">
+                  {renderError}
+                </div>
+              )}
+
+              {/* Analyze & Render controls (draft or failed state) */}
+              {(compilation.status === 'draft' || compilation.status === 'failed') && !rendering && (
+                <>
+                  {!analysis ? (
+                    <button
+                      onClick={handleAnalyze}
+                      disabled={analyzing}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                    >
+                      {analyzing ? <Loader2 size={16} className="animate-spin" /> : <Scan size={16} />}
+                      {analyzing ? 'Analyzing...' : 'Analyze Compatibility'}
+                    </button>
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        {analysis.compatible ? (
+                          <span className="text-sm text-green-700 dark:text-green-400 font-medium">All clips compatible</span>
+                        ) : (
+                          <span className="text-sm text-amber-700 dark:text-amber-400 font-medium">Compatibility issue detected</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{analysis.reason}</p>
+
+                      <div className="space-y-2">
+                        {analysis.options?.map((opt: any) => (
+                          <label
+                            key={opt.mode}
+                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                              renderMode === opt.mode
+                                ? 'border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                                : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="renderMode"
+                              value={opt.mode}
+                              checked={renderMode === opt.mode}
+                              onChange={() => setRenderMode(opt.mode)}
+                              className="mt-0.5"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                                {opt.recommended && (
+                                  <span className="text-xs px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded">recommended</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{opt.description}</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Estimated: {opt.estimated_time}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={handleRender}
+                          disabled={!renderMode}
+                          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
+                        >
+                          <Play size={16} />
+                          Render Compilation
+                        </button>
+                        <button
+                          onClick={() => setAnalysis(null)}
+                          className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right: Preview */}

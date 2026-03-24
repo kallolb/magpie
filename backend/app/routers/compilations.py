@@ -1,11 +1,17 @@
+import asyncio
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 import aiosqlite
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
+from app.config import Settings, get_settings
 from app.database import get_db_dep
+from app.services.renderer import analyze_clips, render_compilation
 from app.models.compilation import (
     ClipCreate,
     ClipReorder,
@@ -373,3 +379,161 @@ async def import_from_loop(
         label=loop["label"],
     )
     return await add_clip(compilation_id, clip_body, db)
+
+
+# --- Render Pipeline ---
+
+class RenderRequest(BaseModel):
+    mode: str = "auto"  # "copy", "reencode", or "auto"
+
+
+@router.post("/{compilation_id}/analyze")
+async def analyze_compilation(
+    compilation_id: str,
+    settings: Settings = Depends(get_settings),
+    db: aiosqlite.Connection = Depends(get_db_dep),
+) -> dict[str, Any]:
+    """Analyze clips for codec compatibility."""
+    db.row_factory = aiosqlite.Row
+
+    cursor = await db.execute("SELECT id FROM compilations WHERE id = ?", (compilation_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compilation not found")
+
+    cursor = await db.execute(
+        """SELECT cc.id as clip_id, cc.source_video_id, cc.start_secs, cc.end_secs,
+                  v.file_path
+           FROM compilation_clips cc
+           JOIN videos v ON cc.source_video_id = v.id
+           WHERE cc.compilation_id = ?
+           ORDER BY cc.position""",
+        (compilation_id,),
+    )
+    clips = [dict(r) for r in await cursor.fetchall()]
+
+    if not clips:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No clips to analyze")
+
+    for clip in clips:
+        clip["duration"] = clip["end_secs"] - clip["start_secs"]
+
+    return await analyze_clips(clips, settings.STORAGE_ROOT)
+
+
+# In-memory render tasks
+_render_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+@router.post("/{compilation_id}/render")
+async def start_render(
+    compilation_id: str,
+    body: RenderRequest,
+    settings: Settings = Depends(get_settings),
+    db: aiosqlite.Connection = Depends(get_db_dep),
+) -> dict[str, str]:
+    """Start rendering a compilation."""
+    db.row_factory = aiosqlite.Row
+
+    cursor = await db.execute("SELECT status FROM compilations WHERE id = ?", (compilation_id,))
+    comp = await cursor.fetchone()
+    if not comp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compilation not found")
+    if comp["status"] == "rendering":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already rendering")
+
+    # Check clips exist
+    cursor = await db.execute(
+        "SELECT COUNT(*) as cnt FROM compilation_clips WHERE compilation_id = ?", (compilation_id,)
+    )
+    if (await cursor.fetchone())["cnt"] == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No clips to render")
+
+    # Determine mode
+    mode = body.mode
+    if mode == "auto":
+        # Analyze and pick recommendation
+        cursor = await db.execute(
+            """SELECT cc.id as clip_id, cc.source_video_id, cc.start_secs, cc.end_secs, v.file_path
+               FROM compilation_clips cc JOIN videos v ON cc.source_video_id = v.id
+               WHERE cc.compilation_id = ? ORDER BY cc.position""",
+            (compilation_id,),
+        )
+        clips = [dict(r) for r in await cursor.fetchall()]
+        for c in clips:
+            c["duration"] = c["end_secs"] - c["start_secs"]
+        analysis = await analyze_clips(clips, settings.STORAGE_ROOT)
+        mode = analysis["recommendation"]
+
+    # Launch background task
+    task = asyncio.create_task(
+        render_compilation(settings.DATABASE_PATH, settings.STORAGE_ROOT, compilation_id, mode)
+    )
+    _render_tasks[compilation_id] = task
+
+    logger.info("render_started", compilation_id=compilation_id, mode=mode)
+    return {"status": "rendering", "mode": mode}
+
+
+@router.get("/{compilation_id}/render/progress")
+async def render_progress(
+    compilation_id: str,
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    """SSE stream for render progress."""
+    async def event_generator():
+        async with aiosqlite.connect(settings.DATABASE_PATH) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            db.row_factory = aiosqlite.Row
+
+            last_status = None
+            while True:
+                cursor = await db.execute(
+                    "SELECT status, error_message FROM compilations WHERE id = ?",
+                    (compilation_id,),
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    yield f'data: {{"status": "not_found"}}\n\n'
+                    break
+
+                current = row["status"]
+                if current != last_status:
+                    data = f'{{"status": "{current}"'
+                    if row["error_message"]:
+                        err = row["error_message"].replace('"', '\\"')
+                        data += f', "error": "{err}"'
+                    data += '}'
+                    yield f'data: {data}\n\n'
+                    last_status = current
+
+                if current in ("completed", "failed"):
+                    yield 'event: close\ndata: {}\n\n'
+                    break
+
+                await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/{compilation_id}/stream")
+async def stream_compilation(
+    compilation_id: str,
+    settings: Settings = Depends(get_settings),
+    db: aiosqlite.Connection = Depends(get_db_dep),
+) -> FileResponse:
+    """Stream the rendered compilation file."""
+    db.row_factory = aiosqlite.Row
+    cursor = await db.execute(
+        "SELECT output_path, status FROM compilations WHERE id = ?", (compilation_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compilation not found")
+    if row["status"] != "completed" or not row["output_path"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Compilation not yet rendered")
+
+    file_path = Path(settings.STORAGE_ROOT) / row["output_path"]
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output file not found")
+
+    return FileResponse(path=file_path, media_type="video/mp4", filename=file_path.name)
