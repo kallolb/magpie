@@ -170,7 +170,8 @@ magpie/
 │   └── discord_bot.py              # Discord bot → webhook
 ├── docs/
 │   ├── DESIGN.md                   # Architecture & design document
-│   └── DEVELOPER_GUIDE.md          # This file
+│   ├── DEVELOPER_GUIDE.md          # This file
+│   └── COMPILATION_DESIGN.md       # Compilation feature design (planned)
 ├── deploy/
 │   ├── docker-compose.yml          # Local development stack
 │   ├── docker-compose.nas.yml      # NAS deployment variant
