@@ -28,5 +28,10 @@ Thumbs.db
 # Claude Code local settings
 .claude/
 
+# Playwright
+e2e/screenshots/
+node_modules/
+test-results/
+
 # Logs
 *.log
