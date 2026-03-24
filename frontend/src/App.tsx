@@ -6,6 +6,7 @@ import Download from '@/pages/Download'
 import VideoView from '@/pages/VideoView'
 import Search from '@/pages/Search'
 import Settings from '@/pages/Settings'
+import Analytics from '@/pages/Analytics'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/download" element={<Download />} />
           <Route path="/video/:id" element={<VideoView />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

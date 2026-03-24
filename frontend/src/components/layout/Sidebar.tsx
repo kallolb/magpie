@@ -5,6 +5,7 @@ import {
   Grid3x3,
   Download,
   Search,
+  BarChart3,
   Settings,
   ChevronDown,
   X,
@@ -34,6 +35,7 @@ export default function Sidebar({ open, onOpenChange }: SidebarProps) {
     { label: 'Browse', path: '/browse', icon: Grid3x3 },
     { label: 'Download', path: '/download', icon: Download },
     { label: 'Search', path: '/search', icon: Search },
+    { label: 'Analytics', path: '/analytics', icon: BarChart3 },
     { label: 'Settings', path: '/settings', icon: Settings },
   ]
 

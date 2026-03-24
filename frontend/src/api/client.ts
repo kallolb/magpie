@@ -100,6 +100,10 @@ export const apiClient = {
   getStorageStats: (): Promise<StorageStats> =>
     api.get('/storage/stats').then((res) => res.data),
 
+  // Analytics
+  getAnalytics: (): Promise<any> =>
+    api.get('/analytics').then((res) => res.data),
+
   // Loop Markers
   getLoopMarkers: (videoId: string): Promise<LoopMarker[]> =>
     api.get(`/videos/${videoId}/loops`).then((res) => res.data),
