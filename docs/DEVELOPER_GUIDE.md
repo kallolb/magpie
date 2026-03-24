@@ -87,6 +87,7 @@ graph TB
 | State Management | Zustand | 4.x |
 | CSS | Tailwind CSS | 3.x |
 | Charts | recharts | 2.x |
+| Drag-and-drop | @dnd-kit | 6.x |
 | Build Tool | Vite | 5.x |
 | Database | SQLite (aiosqlite) | FTS5 enabled |
 | Video Downloads | yt-dlp | ≥2024.01 |
@@ -110,7 +111,8 @@ magpie/
 │   │   │   ├── video.py            # VideoResponse, DownloadRequest, SearchRequest, etc.
 │   │   │   ├── tag.py              # TagCreate, TagResponse
 │   │   │   ├── category.py         # CategoryCreate, CategoryResponse
-│   │   │   └── loop_marker.py     # LoopMarkerCreate, LoopMarkerResponse
+│   │   │   ├── loop_marker.py     # LoopMarkerCreate, LoopMarkerResponse
+│   │   │   └── compilation.py    # CompilationCreate/Update/Response, ClipCreate/Update/Response
 │   │   ├── routers/                # FastAPI route handlers
 │   │   │   ├── videos.py           # /api/videos/* CRUD, search, streaming, thumbnails
 │   │   │   ├── downloads.py        # /api/downloads/* start, status, SSE, cancel
@@ -119,13 +121,15 @@ magpie/
 │   │   │   ├── webhook.py          # /api/webhook/ingest (chatbot integration)
 │   │   │   ├── settings.py         # /api/settings, /api/health
 │   │   │   ├── loop_markers.py    # /api/videos/{id}/loops CRUD
-│   │   │   └── analytics.py      # /api/analytics aggregated metrics
+│   │   │   ├── analytics.py      # /api/analytics aggregated metrics
+│   │   │   └── compilations.py  # /api/compilations CRUD, clips, render, stream
 │   │   ├── services/               # Business logic layer
 │   │   │   ├── downloader.py       # yt-dlp wrappers (extract_metadata, download_video)
 │   │   │   ├── search.py           # FTS5 search queries, FTS index rebuild
 │   │   │   ├── categorizer.py      # Regex-based auto-categorization
 │   │   │   ├── thumbnail.py        # Thumbnail download (httpx) and generation (ffmpeg)
-│   │   │   └── notifier.py         # Webhook callback notification manager
+│   │   │   ├── notifier.py         # Webhook callback notification manager
+│   │   │   └── renderer.py        # ffmpeg compilation rendering
 │   │   ├── tasks/
 │   │   │   └── download_task.py    # Main download pipeline (single + playlist)
 │   │   └── utils/
@@ -155,6 +159,8 @@ magpie/
 │   │   │   ├── Search.tsx          # Search results page
 │   │   │   ├── VideoView.tsx       # Single video detail + player
 │   │   │   ├── Analytics.tsx      # Analytics dashboard with recharts
+│   │   │   ├── Compilations.tsx   # Compilation list page
+│   │   │   ├── CompilationEditor.tsx # Compilation editor with clips, timeline, render
 │   │   │   └── Settings.tsx        # Configuration management
 │   │   └── components/             # Reusable UI components
 │   │       ├── layout/             # Header, Sidebar, Layout shell
@@ -202,6 +208,8 @@ magpie/
 | **Download** | An in-progress video download tracked as an asyncio task | `videos` table (status/progress columns) + in-memory task map |
 | **DownloadLog** | Audit trail of download attempts | `download_log` table |
 | **LoopMarker** | A saved A-B repeat region within a video (label, start/end times) | `loop_markers` table |
+| **Compilation** | A user-created video made from clips of existing videos | `compilations` table + filesystem |
+| **CompilationClip** | A time range from a source video, with position in a compilation | `compilation_clips` table |
 
 ### Key Abstractions
 
@@ -639,6 +647,7 @@ docker exec -w /app magpie-backend python -m pytest tests/ --cov=app --cov-repor
 | `test_api_tags.py` | 7 | Tag CRUD endpoints |
 | `test_api_categories.py` | 7 | Category CRUD endpoints |
 | `test_api_loop_markers.py` | 14 | Loop marker CRUD, rename, cascade delete, validation |
+| `test_api_compilations.py` | 20 | Compilation CRUD, clip management, reorder, loop import, cascade |
 
 ### Fixtures (conftest.py)
 
@@ -891,7 +900,56 @@ useEffect(() => {
 - Tooltip `formatter` needs `(v) => fn(v as number)` casting for recharts type compatibility
 - Empty data states show "No data yet" placeholder instead of empty charts
 
-### 9.11 Frontend `store/index.ts` — Zustand Store
+### 9.11 `app/routers/compilations.py` — Compilation CRUD + Render
+
+**Purpose:** Full CRUD for compilations and their clips, plus codec analysis and ffmpeg render pipeline.
+
+**Endpoints (15 total):**
+- Compilation CRUD: create, list (with ?q= search), get, update, delete
+- Clip management: add, update, delete, reorder, import from loop marker
+- Render: analyze, render (background task), progress SSE, stream output
+- `GET /api/videos/{id}/deletion-check` (on videos router) — checks if video is referenced
+
+**Key implementation details:**
+- Route ordering matters: `PUT .../clips/reorder` must be defined before `PUT .../clips/{clip_id}` to avoid FastAPI treating "reorder" as a clip ID
+- Clips auto-position (MAX+1) on add, auto-reorder on delete
+- Status guard prevents clip modification during rendering or after completion
+- Render launches `asyncio.create_task` for background ffmpeg work
+- The `_build_response` helper joins clips with source video metadata (title, thumbnail)
+
+### 9.12 `app/services/renderer.py` — ffmpeg Render Pipeline
+
+**Purpose:** Analyzes clip codec compatibility and renders compilations using ffmpeg.
+
+**Public API:**
+- `analyze_clips(clips, storage_root)` — ffprobe each source, compare codecs/resolutions, return recommendation
+- `render_compilation(db_path, storage_root, compilation_id, mode)` — background render task
+
+**Render modes:**
+- **Stream copy** (`-c copy`): cuts each clip individually, then concatenates. Near-instant but requires compatible codecs/resolutions
+- **Re-encode** (`libx264/aac`): re-encodes each clip to 1080p 30fps H.264/AAC, then concatenates. Slower but guaranteed smooth playback
+
+**Pipeline:** cut clips to temp dir → concatenate → generate thumbnail → get duration → update DB → clean up temp
+
+**Gotchas:**
+- Uses `-avoid_negative_ts make_zero` for stream copy to prevent timestamp issues at clip boundaries
+- Re-encode uses `scale=1920:1080:force_original_aspect_ratio=decrease,pad=...` to handle mixed aspect ratios
+- Temp files stored in `{STORAGE_ROOT}/compilations_tmp/{id}/`, cleaned up in finally block
+- Opens its own DB connection (same pattern as download tasks) since it runs as a background task
+
+### 9.13 Frontend `CompilationEditor.tsx` — Editor UI
+
+**Purpose:** Split-panel editor for managing clips and rendering compilations.
+
+**Key patterns:**
+- **Drag-and-drop** via @dnd-kit: `DndContext` wraps `SortableContext` with `verticalListSortingStrategy`. Each clip is a `SortableClip` component using `useSortable`. Optimistic reorder on drag-end with API sync
+- **Timeline visualization**: colored proportional bar showing clip durations, clickable for preview
+- **Clip preview**: right panel loads source video seeked to clip range with `timeupdate` loop
+- **Add Clip modal**: search videos → select → A/B markers → save
+- **Loop import modal**: fetches all videos with loops, multi-select checkboxes
+- **Analyze + render**: analyze shows codec info with radio buttons for mode selection, render shows progress with polling
+
+### 9.14 Frontend `store/index.ts` — Zustand Store
 
 **Purpose:** Global state management for the React SPA.
 
@@ -900,7 +958,7 @@ useEffect(() => {
 - `activeDownloads` is a `Map<string, DownloadStatus>` — entries are auto-removed 5s after completion
 - `searchQuery` state is shared between the Header search bar and the Search page
 
-### 9.12 Frontend `hooks/useDownload.ts` — Download Hook
+### 9.15 Frontend `hooks/useDownload.ts` — Download Hook
 
 **Important behavior:**
 - Opens an `EventSource` for SSE progress
@@ -908,7 +966,7 @@ useEffect(() => {
 - On terminal status: closes EventSource, calls `fetchVideos()` to refresh the list, sets error for `failed`/`duplicate`
 - On SSE connection error: sets "Connection lost" error
 
-### 9.13 Frontend `components/tags/TagInput.tsx` — Tag Input
+### 9.16 Frontend `components/tags/TagInput.tsx` — Tag Input
 
 **Important behavior:**
 - Tags are committed on: space, comma, or Enter key
@@ -972,6 +1030,7 @@ useEffect(() => {
 | New platform support | `utils/url_parser.py`, `tests/test_url_parser.py`, `DownloadForm.tsx` (optional UI) |
 | Loop marker change | `database.py` (schema), `models/loop_marker.py`, `routers/loop_markers.py`, `VideoPlayer.tsx`, `api/client.ts`, `types/index.ts` |
 | Analytics change | `routers/analytics.py` (queries), `Analytics.tsx` (charts), `api/client.ts` |
+| Compilation change | `database.py`, `models/compilation.py`, `routers/compilations.py`, `services/renderer.py`, `Compilations.tsx`, `CompilationEditor.tsx`, `api/client.ts`, `types/index.ts` |
 | Database schema change | `database.py`, affected routers, models, tests |
 
 ### PR Checklist
@@ -1008,6 +1067,15 @@ Backend uses **structlog** with JSON output. Key log events:
 | `loop_marker_renamed` | loop_markers.py | Loop marker label updated |
 | `loop_marker_deleted` | loop_markers.py | Loop marker removed |
 | `analytics_computed` | analytics.py | Analytics endpoint served |
+| `compilation_created` | compilations.py | New compilation created |
+| `compilation_updated` | compilations.py | Compilation metadata updated |
+| `compilation_deleted` | compilations.py | Compilation and output file removed |
+| `clip_added` | compilations.py | Clip added to compilation |
+| `clip_deleted` | compilations.py | Clip removed from compilation |
+| `clips_reordered` | compilations.py | Clip order changed |
+| `render_started` | compilations.py | Render background task launched |
+| `compilation_rendered` | renderer.py | Render completed successfully |
+| `compilation_render_failed` | renderer.py | Render failed with error |
 
 ### Viewing Logs
 
@@ -1129,5 +1197,10 @@ curl -X POST http://localhost:8000/api/videos/regenerate-thumbnails
 | **triggered_by** | Audit field tracking download source: `"api"`, `"webhook:telegram"`, `"callback:cb123"` |
 | **flat extraction** | yt-dlp mode fetching playlist structure without downloading each entry's full metadata |
 | **safe_filename** | Function that sanitizes video titles for filesystem compatibility |
+| **compilation** | A user-created video assembled from clips of existing videos, rendered via ffmpeg |
+| **clip** | A time range (start/end seconds) from a source video, with a position in a compilation |
+| **stream copy** | ffmpeg mode that copies codec data without re-encoding — fast but requires compatible sources |
+| **re-encode** | ffmpeg mode that decodes and re-encodes to a uniform format — slower but handles mixed sources |
+| **ffprobe** | ffmpeg companion tool for inspecting video codec, resolution, and audio info |
 | **loop marker** | A saved A-B repeat region on a video, defined by label + start/end seconds |
 | **NAS** | Network-Attached Storage — target deployment environment |

@@ -121,9 +121,18 @@ All metrics are computed live from existing data and update automatically with e
 
 The video player supports loop markers for practicing music or studying video sections. Set A and B points during playback to loop a section, then save it with a label for later. Saved loops are persisted per video and accessible from the player UI.
 
-## Compilations (Planned)
+## Compilations
 
-Create new videos by combining clips from existing videos in your library — useful for making highlight reels, practice compilations, or "best of" collections. See [docs/COMPILATION_DESIGN.md](./docs/COMPILATION_DESIGN.md) for the full design.
+Create new videos by combining clips from existing videos in your library. Useful for highlight reels, practice compilations, or "best of" collections.
+
+- **Clip editor** — Search videos, set A/B markers to select clips, add to compilation
+- **Drag-and-drop** reordering with visual timeline showing clip proportions
+- **Loop marker import** — Convert saved loop markers into compilation clips
+- **Codec analysis** — Detects compatibility across clips, recommends fast (stream copy) or quality (re-encode) render mode
+- **ffmpeg rendering** — Background render with progress tracking and inline playback
+- **Unified search** — Search across videos, compilations, or both
+
+See [docs/COMPILATION_DESIGN.md](./docs/COMPILATION_DESIGN.md) for the design document.
 
 ## Moving to NAS Storage
 

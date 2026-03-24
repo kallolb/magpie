@@ -49,14 +49,16 @@ backend/
 │   │   ├── webhook.py         # Webhook integration
 │   │   ├── settings.py        # Config & health endpoints
 │   │   ├── loop_markers.py    # A-B loop marker CRUD
-│   │   └── analytics.py      # Aggregated analytics endpoint
+│   │   ├── analytics.py      # Aggregated analytics endpoint
+│   │   └── compilations.py   # Compilation CRUD, clips, render, stream
 │   │
 │   ├── services/              # Business logic
 │   │   ├── downloader.py      # yt-dlp wrapper
 │   │   ├── categorizer.py     # Auto-categorization rules
 │   │   ├── search.py          # FTS5 search logic
 │   │   ├── thumbnail.py       # Thumbnail download/storage
-│   │   └── notifier.py        # Webhook callbacks
+│   │   ├── notifier.py        # Webhook callbacks
+│   │   └── renderer.py       # ffmpeg compilation rendering (stream copy + re-encode)
 │   │
 │   ├── tasks/
 │   │   └── download_task.py   # Main download pipeline
@@ -168,6 +170,15 @@ backend/
 - `video_id`, `label`, `start_secs`, `end_secs`
 - Cascade-deleted when the parent video is deleted
 
+### compilations table
+- User-created compilations with title, category, status (draft/rendering/completed/failed)
+- `render_mode`: copy or reencode
+- `output_path`, `output_size_bytes`, `duration_secs`: set after rendering
+
+### compilation_clips table
+- Clips referencing source videos with `start_secs`, `end_secs`, `position`
+- `compilation_id` FK with CASCADE delete; `source_video_id` FK to videos
+
 ### download_log table
 - Audit trail of download attempts
 - `triggered_by`: API, webhook:source, callback:id
@@ -207,6 +218,23 @@ backend/
 
 ### Webhook API
 - `POST /api/webhook/ingest` - Universal ingestion (bot integration)
+
+### Compilations API
+- `POST /api/compilations` - Create compilation
+- `GET /api/compilations` - List (supports ?q= search)
+- `GET /api/compilations/{id}` - Get with clips
+- `PUT /api/compilations/{id}` - Update title/description/category
+- `DELETE /api/compilations/{id}` - Delete with output file
+- `POST /api/compilations/{id}/clips` - Add clip
+- `PUT /api/compilations/{id}/clips/reorder` - Reorder clips
+- `PUT /api/compilations/{id}/clips/{clip_id}` - Update clip
+- `DELETE /api/compilations/{id}/clips/{clip_id}` - Remove clip
+- `POST /api/compilations/{id}/clips/from-loop/{loop_id}` - Import loop marker
+- `POST /api/compilations/{id}/analyze` - Codec compatibility analysis
+- `POST /api/compilations/{id}/render` - Start render (copy/reencode/auto)
+- `GET /api/compilations/{id}/render/progress` - SSE render progress
+- `GET /api/compilations/{id}/stream` - Stream rendered output
+- `GET /api/videos/{id}/deletion-check` - Check if video is used in compilations
 
 ### Analytics API
 - `GET /api/analytics` - Aggregated analytics (storage, collection, content, activity)

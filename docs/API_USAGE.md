@@ -243,6 +243,75 @@ curl -X DELETE http://localhost:8000/api/videos/{video_id}/loops/{loop_id} \
   -H "X-API-Key: changeme"
 ```
 
+### Compilations
+
+#### Create a Compilation
+```bash
+curl -X POST http://localhost:8000/api/compilations \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{"title": "Best Guitar Riffs", "category": "music"}'
+```
+
+#### List Compilations
+```bash
+curl http://localhost:8000/api/compilations \
+  -H "X-API-Key: changeme"
+
+# With search
+curl "http://localhost:8000/api/compilations?q=guitar" \
+  -H "X-API-Key: changeme"
+```
+
+#### Add a Clip
+```bash
+curl -X POST http://localhost:8000/api/compilations/{id}/clips \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{"source_video_id": "vid-1", "start_secs": 45.0, "end_secs": 83.0, "label": "Solo"}'
+```
+
+#### Import a Loop Marker as Clip
+```bash
+curl -X POST http://localhost:8000/api/compilations/{id}/clips/from-loop/{loop_id} \
+  -H "X-API-Key: changeme"
+```
+
+#### Reorder Clips
+```bash
+curl -X PUT http://localhost:8000/api/compilations/{id}/clips/reorder \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{"clip_ids": [3, 1, 2]}'
+```
+
+#### Analyze Codec Compatibility
+```bash
+curl -X POST http://localhost:8000/api/compilations/{id}/analyze \
+  -H "X-API-Key: changeme"
+```
+
+#### Render a Compilation
+```bash
+curl -X POST http://localhost:8000/api/compilations/{id}/render \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: changeme" \
+  -d '{"mode": "auto"}'
+# mode: "copy" (fast), "reencode" (quality), or "auto" (recommended)
+```
+
+#### Stream Rendered Compilation
+```bash
+curl http://localhost:8000/api/compilations/{id}/stream \
+  -H "X-API-Key: changeme" -o compilation.mp4
+```
+
+#### Check Video Deletion Impact
+```bash
+curl http://localhost:8000/api/videos/{video_id}/deletion-check \
+  -H "X-API-Key: changeme"
+```
+
 ### Analytics
 
 #### Get All Analytics
@@ -289,6 +358,8 @@ storage/
 - **categories**: Available categories
 - **videos_fts**: Full-text search index (FTS5)
 - **loop_markers**: Saved A-B loop regions per video
+- **compilations**: User-created compilations (title, status, output path)
+- **compilation_clips**: Clips referencing source videos with time ranges and ordering
 - **download_log**: History of download attempts
 
 ## Features
