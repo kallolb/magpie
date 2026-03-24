@@ -55,7 +55,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.nas.yml up 
 - `app/main.py` — FastAPI app factory, CORS, middleware, router registration, lifespan
 - `app/config.py` — Pydantic Settings (env-based config), derives DB/storage paths from `STORAGE_ROOT`
 - `app/database.py` — SQLite schema, init, async connection helpers (`get_db_dep`, `fetch_all`, `fetch_one`)
-- `app/routers/` — API endpoints: `videos`, `downloads`, `tags`, `categories`, `webhook`, `settings`, `loop_markers`
+- `app/routers/` — API endpoints: `videos`, `downloads`, `tags`, `categories`, `webhook`, `settings`, `loop_markers`, `analytics`
 - `app/services/` — Business logic: `downloader` (yt-dlp), `search` (FTS5), `categorizer`, `thumbnail`, `notifier`
 - `app/models/` — Pydantic models for `video`, `tag`, `category`, `loop_marker`
 - `app/tasks/` — ARQ background tasks (`download_task`)
@@ -65,7 +65,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.nas.yml up 
 
 - `src/api/client.ts` — Axios-based API client, all backend calls centralized here
 - `src/types/index.ts` — TypeScript interfaces matching backend models
-- `src/pages/` — Route pages: Dashboard, Browse, Download, VideoView, Search, Settings
+- `src/pages/` — Route pages: Dashboard, Browse, Download, VideoView, Search, Analytics, Settings
 - `src/components/` — UI components organized by domain: `video/`, `tags/`, `search/`, `settings/`, `layout/`
 - `src/hooks/` — Custom hooks: `useVideos`, `useTags`, `useSearch`, `useDownload`
 - `src/store/index.ts` — Zustand store
@@ -80,5 +80,5 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.nas.yml up 
 - `PRAGMA foreign_keys = ON` is set per-connection — any new DB connection must set it for cascade deletes to work
 - FTS index (`videos_fts`) must be kept in sync when inserting/updating videos
 - Frontend uses `@/` path alias (maps to `src/`)
-- Frontend uses Tailwind CSS for styling (no CSS modules)
+- Frontend uses Tailwind CSS for styling (no CSS modules) and recharts for analytics visualizations
 - Loop markers are stored in the `loop_markers` table and managed via `/api/videos/{id}/loops` endpoints

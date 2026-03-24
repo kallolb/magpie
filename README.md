@@ -106,6 +106,17 @@ curl "http://localhost:8000/api/videos/search?q=python+tutorial" \
 curl http://localhost:8000/api/categories -H "X-API-Key: changeme"
 ```
 
+## Analytics Dashboard
+
+The Analytics page provides a comprehensive view of your video library with interactive charts (powered by recharts):
+
+- **Storage** — Total usage, breakdown by category and platform, storage growth over time, largest videos
+- **Video Collection** — Videos by platform/category/status, top uploaders, download success rate
+- **Content** — Duration and file size distributions, resolution breakdown, most used tags, average duration by platform
+- **Activity** — Daily download trends (30 days), downloads by day of week, loop marker usage
+
+All metrics are computed live from existing data and update automatically with every download.
+
 ## Loop Markers (A-B Repeat)
 
 The video player supports loop markers for practicing music or studying video sections. Set A and B points during playback to loop a section, then save it with a label for later. Saved loops are persisted per video and accessible from the player UI.

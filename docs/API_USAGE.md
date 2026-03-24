@@ -243,6 +243,20 @@ curl -X DELETE http://localhost:8000/api/videos/{video_id}/loops/{loop_id} \
   -H "X-API-Key: changeme"
 ```
 
+### Analytics
+
+#### Get All Analytics
+```bash
+curl http://localhost:8000/api/analytics \
+  -H "X-API-Key: changeme"
+```
+
+Returns a JSON object with four sections:
+- `storage` — total bytes, by category, by platform, largest videos, monthly growth
+- `collection` — by status, by platform, by category, top uploaders, success rate
+- `content` — duration/size/resolution distributions, top tags, avg duration by platform
+- `activity` — daily downloads (30d), by day of week, recent vs prior week, loop marker stats
+
 ### Settings
 
 #### Get Settings

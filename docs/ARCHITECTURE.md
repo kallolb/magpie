@@ -48,7 +48,8 @@ backend/
 │   │   ├── categories.py      # Category management
 │   │   ├── webhook.py         # Webhook integration
 │   │   ├── settings.py        # Config & health endpoints
-│   │   └── loop_markers.py    # A-B loop marker CRUD
+│   │   ├── loop_markers.py    # A-B loop marker CRUD
+│   │   └── analytics.py      # Aggregated analytics endpoint
 │   │
 │   ├── services/              # Business logic
 │   │   ├── downloader.py      # yt-dlp wrapper
@@ -206,6 +207,9 @@ backend/
 
 ### Webhook API
 - `POST /api/webhook/ingest` - Universal ingestion (bot integration)
+
+### Analytics API
+- `GET /api/analytics` - Aggregated analytics (storage, collection, content, activity)
 
 ### System API
 - `GET /api/health` - Health check

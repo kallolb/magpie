@@ -86,6 +86,7 @@ graph TB
 | UI Framework | React | 18.x |
 | State Management | Zustand | 4.x |
 | CSS | Tailwind CSS | 3.x |
+| Charts | recharts | 2.x |
 | Build Tool | Vite | 5.x |
 | Database | SQLite (aiosqlite) | FTS5 enabled |
 | Video Downloads | yt-dlp | ≥2024.01 |
@@ -117,7 +118,8 @@ magpie/
 │   │   │   ├── categories.py       # /api/categories/* CRUD
 │   │   │   ├── webhook.py          # /api/webhook/ingest (chatbot integration)
 │   │   │   ├── settings.py         # /api/settings, /api/health
-│   │   │   └── loop_markers.py    # /api/videos/{id}/loops CRUD
+│   │   │   ├── loop_markers.py    # /api/videos/{id}/loops CRUD
+│   │   │   └── analytics.py      # /api/analytics aggregated metrics
 │   │   ├── services/               # Business logic layer
 │   │   │   ├── downloader.py       # yt-dlp wrappers (extract_metadata, download_video)
 │   │   │   ├── search.py           # FTS5 search queries, FTS index rebuild
@@ -152,6 +154,7 @@ magpie/
 │   │   │   ├── Download.tsx        # Full download form
 │   │   │   ├── Search.tsx          # Search results page
 │   │   │   ├── VideoView.tsx       # Single video detail + player
+│   │   │   ├── Analytics.tsx      # Analytics dashboard with recharts
 │   │   │   └── Settings.tsx        # Configuration management
 │   │   └── components/             # Reusable UI components
 │   │       ├── layout/             # Header, Sidebar, Layout shell
@@ -823,7 +826,71 @@ useEffect(() => {
 
 **Visual indicators:** Colored bars overlaid near the video progress bar showing loop regions (blue for saved, yellow for unsaved preview, green for active).
 
-### 9.10 Frontend `store/index.ts` — Zustand Store
+### 9.9 `app/routers/analytics.py` — Analytics Dashboard
+
+**Purpose:** Single endpoint that computes all analytics metrics via SQL aggregation queries against existing tables. No separate storage or schema changes needed — metrics update automatically with every download.
+
+**Endpoint:**
+- `GET /api/analytics` — Returns a JSON object with four top-level sections
+
+**Response structure:**
+```
+{
+  "storage": {
+    "total_bytes", "total_completed",
+    "by_category": [{category, count, total_bytes}],
+    "by_platform": [{platform, count, total_bytes}],
+    "largest_videos": [{id, title, file_size_bytes, ...}],
+    "growth": [{month, count, monthly_bytes, cumulative_bytes}]
+  },
+  "collection": {
+    "by_status", "by_platform", "by_category",
+    "top_uploaders": [{uploader, count, total_bytes}],
+    "download_success_rate": {total, completed, failed, duplicate}
+  },
+  "content": {
+    "duration_distribution": [{label, count}],
+    "resolution_breakdown", "size_distribution",
+    "top_tags": [{name, count}],
+    "avg_duration", "avg_duration_by_platform"
+  },
+  "activity": {
+    "daily_downloads": [{day, count}],
+    "by_day_of_week": [{day_name, count}],
+    "recent": {last_7_days, prior_7_days},
+    "loop_markers": {total_loops, videos_with_loops}
+  }
+}
+```
+
+**Implementation notes:**
+- All metrics are computed in a single request via ~20 SQL queries
+- Storage growth uses cumulative sum computed in Python after fetching monthly aggregates
+- Duration/size distributions use SQL CASE expressions with predefined bucket ranges
+- No caching — queries are fast on SQLite for typical personal library sizes (<10K videos)
+
+### 9.10 Frontend `Analytics.tsx` — Visualizations
+
+**Purpose:** Full-page analytics dashboard using recharts for interactive charts.
+
+**Charts used:**
+- `BarChart` — Storage by category (horizontal), videos by platform, download status, duration/size distributions, tags, avg duration by platform, downloads by day of week
+- `PieChart` — Storage by platform, videos by category, resolution breakdown
+- `AreaChart` — Storage growth over time (cumulative)
+- `LineChart` — Daily downloads (last 30 days)
+
+**Component structure:**
+- `StatCard` — Summary metric with icon, value, and subtitle
+- `Section` — Titled section wrapper with border
+- `ChartCard` — Card container for individual charts
+- All chart data comes from a single `GET /api/analytics` call on mount
+
+**Gotchas:**
+- Recharts Pie `label` props need `(props: any)` casting to avoid TypeScript `PieLabelRenderProps` type conflicts
+- Tooltip `formatter` needs `(v) => fn(v as number)` casting for recharts type compatibility
+- Empty data states show "No data yet" placeholder instead of empty charts
+
+### 9.11 Frontend `store/index.ts` — Zustand Store
 
 **Purpose:** Global state management for the React SPA.
 
@@ -832,7 +899,7 @@ useEffect(() => {
 - `activeDownloads` is a `Map<string, DownloadStatus>` — entries are auto-removed 5s after completion
 - `searchQuery` state is shared between the Header search bar and the Search page
 
-### 9.11 Frontend `hooks/useDownload.ts` — Download Hook
+### 9.12 Frontend `hooks/useDownload.ts` — Download Hook
 
 **Important behavior:**
 - Opens an `EventSource` for SSE progress
@@ -840,7 +907,7 @@ useEffect(() => {
 - On terminal status: closes EventSource, calls `fetchVideos()` to refresh the list, sets error for `failed`/`duplicate`
 - On SSE connection error: sets "Connection lost" error
 
-### 9.12 Frontend `components/tags/TagInput.tsx` — Tag Input
+### 9.13 Frontend `components/tags/TagInput.tsx` — Tag Input
 
 **Important behavior:**
 - Tags are committed on: space, comma, or Enter key
@@ -903,6 +970,7 @@ useEffect(() => {
 | New category rule | `services/categorizer.py`, `tests/test_categorizer.py` |
 | New platform support | `utils/url_parser.py`, `tests/test_url_parser.py`, `DownloadForm.tsx` (optional UI) |
 | Loop marker change | `database.py` (schema), `models/loop_marker.py`, `routers/loop_markers.py`, `VideoPlayer.tsx`, `api/client.ts`, `types/index.ts` |
+| Analytics change | `routers/analytics.py` (queries), `Analytics.tsx` (charts), `api/client.ts` |
 | Database schema change | `database.py`, affected routers, models, tests |
 
 ### PR Checklist
@@ -938,6 +1006,7 @@ Backend uses **structlog** with JSON output. Key log events:
 | `loop_marker_created` | loop_markers.py | New loop marker saved |
 | `loop_marker_renamed` | loop_markers.py | Loop marker label updated |
 | `loop_marker_deleted` | loop_markers.py | Loop marker removed |
+| `analytics_computed` | analytics.py | Analytics endpoint served |
 
 ### Viewing Logs
 
